@@ -1,0 +1,128 @@
+import streamlit as st
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, f1_score
+from sklearn.preprocessing import LabelEncoder
+import joblib
+from sklearn.ensemble import RandomForestRegressor  # Use Regressor for continuous target
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.linear_model import LinearRegression,LogisticRegression
+import matplotlib.pyplot as plt
+
+#1.Input Interface
+st.write("This Is An Experimental Model")
+uploaded_file = st.file_uploader("Choose a file", type=["csv", "xlsx"])
+df = None
+if uploaded_file is not None:
+    # Read the uploaded file using pandas
+    try:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file) 
+        elif uploaded_file.name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file) 
+        else:
+            st.error("Invalid file type. Please upload a CSV or XLSX file.")
+            df = None 
+
+    except Exception as e:
+        st.error(f"Error reading the file: {e}")
+        df = None 
+
+
+#2.Preprocessing
+if df is not None:
+    # Initialize LabelEncoder
+    label_encoder = LabelEncoder()
+
+    # Loop through each column and apply LabelEncoder to categorical columns
+    for column in df.select_dtypes(include=['object']).columns:
+        df[column] = label_encoder.fit_transform(df[column])
+    
+    target_column = df.iloc[:, -1]  # Select the last column as the target
+    X = df.drop(columns=[df.columns[-1]])  # Drop the last column to get the features
+    y = target_column  # Assign the last column to y (target)
+
+    # Initialize a RandomForestClassifier
+    rf = RandomForestClassifier()
+    #rf = RandomForestRegressor()
+    # Save the model using joblib
+    joblib.dump(rf, 'regression_model.joblib')
+
+    # Load the model using joblib
+    rf = joblib.load('regression_model.joblib')
+
+    # Dictionary to store accuracy for each feature
+    feature_accuracies = {}
+
+    # Loop through each feature in the dataset
+    for feature in X.columns:
+        # Prepare the data by using only the current feature
+        X_feature = X[[feature]]
+        
+        # Split the data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(X_feature, y, test_size=0.3, random_state=42)
+        
+        # Train the RandomForest model
+        rf.fit(X_train, y_train)
+        
+        # Make predictions
+        y_pred = rf.predict(X_test)
+        
+        # Calculate accuracy
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        # Store accuracy for the current feature
+        feature_accuracies[feature] = accuracy
+
+    # Sort features by accuracy (descending order) and select top features
+    selected_features = [feature for feature, accuracy in sorted(feature_accuracies.items(), key=lambda item: item[1], reverse=True)]
+    
+    # Use selected features to train final model
+    X_selected = X[selected_features]
+
+
+#3.User Choice
+# Define functions for Linear Regression
+def option1_action(X_selected, y):
+    st.write("You selected Linear Regression")
+    X_train, X_test, y_train, y_test = train_test_split(X_selected, y, test_size=0.2, random_state=0)
+    regressor = LinearRegression()
+    regressor.fit(X_train, y_train)
+    # Evaluate the model
+    y_pred = regressor.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)  # Mean Squared Error
+    r2 = r2_score(y_test, y_pred)  # R-squared score
+    # Display the results
+    st.write(f"Mean Squared Error: {mse}")
+    st.write(f"R-squared: {r2}")
+
+def option2_action():
+    st.write("You selected Logistic Regression")
+    X_train, X_test, y_train, y_test = train_test_split(X_selected, y, test_size=0.2, random_state=0)
+    regressor = LogisticRegression()
+    regressor.fit(X_train, y_train)
+    y_pred = regressor.predict(X_test)
+    cr = classification_report(y_test, y_pred, output_dict=True)
+    cr_df = pd.DataFrame(cr).transpose()  # Convert the classification report dictionary into a DataFrame
+    st.write("Classification Report:")
+    st.dataframe(cr_df)  # Display the report as a neat table
+    # Calculate and display F1 score
+    f1 = f1_score(y_test, y_pred)
+    st.write(f"F1 Score: {f1}")
+
+
+# Create the button for user selection
+option = st.radio(
+    "Choose an option:",
+    ("Linear Regression", "Logistic Regression")
+)
+
+# Calling the appropriate function based on user choice
+if option == "Linear Regression" and df is not None:
+    option1_action(X_selected, y)  # Pass X_selected and y as arguments
+elif option == "Logistic Regression":
+    option2_action()
+else:
+    st.write("Please upload a valid dataset and preprocess it first.")
+
